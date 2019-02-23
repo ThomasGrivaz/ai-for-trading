@@ -1,0 +1,1252 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Project 6: Analyzing Stock Sentiment from Twits\n",
+    "## Instructions\n",
+    "Each problem consists of a function to implement and instructions on how to implement the function.  The parts of the function that need to be implemented are marked with a `# TODO` comment.\n",
+    "\n",
+    "## Packages\n",
+    "When you implement the functions, you'll only need to you use the packages you've used in the classroom, like [Pandas](https://pandas.pydata.org/) and [Numpy](http://www.numpy.org/). These packages will be imported for you. We recommend you don't add any import statements, otherwise the grader might not be able to run your code.\n",
+    "\n",
+    "### Load Packages"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import json\n",
+    "import nltk\n",
+    "import os\n",
+    "import random\n",
+    "import re\n",
+    "import torch\n",
+    "\n",
+    "from torch import nn, optim\n",
+    "import torch.nn.functional as F"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Introduction\n",
+    "When deciding the value of a company, it's important to follow the news. For example, a product recall or natural disaster in a company's product chain. You want to be able to turn this information into a signal. Currently, the best tool for the job is a Neural Network. \n",
+    "\n",
+    "For this project, you'll use posts from the social media site [StockTwits](https://en.wikipedia.org/wiki/StockTwits). The community on StockTwits is full of investors, traders, and entrepreneurs. Each message posted is called a Twit. This is similar to Twitter's version of a post, called a Tweet. You'll build a model around these twits that generate a sentiment score.\n",
+    "\n",
+    "We've collected a bunch of twits, then hand labeled the sentiment of each. To capture the degree of sentiment, we'll use a five-point scale: very negative, negative, neutral, positive, very positive. Each twit is labeled -2 to 2 in steps of 1, from very negative to very positive respectively. You'll build a sentiment analysis model that will learn to assign sentiment to twits on its own, using this labeled data.\n",
+    "\n",
+    "The first thing we should to do, is load the data.\n",
+    "\n",
+    "## Import Twits \n",
+    "### Load Twits Data \n",
+    "This JSON file contains a list of objects for each twit in the `'data'` field:\n",
+    "\n",
+    "```\n",
+    "{'data':\n",
+    "  {'message_body': 'Neutral twit body text here',\n",
+    "   'sentiment': 0},\n",
+    "  {'message_body': 'Happy twit body text here',\n",
+    "   'sentiment': 1},\n",
+    "   ...\n",
+    "}\n",
+    "```\n",
+    "\n",
+    "The fields represent the following:\n",
+    "\n",
+    "* `'message_body'`: The text of the twit.\n",
+    "* `'sentiment'`: Sentiment score for the twit, ranges from -2 to 2 in steps of 1, with 0 being neutral.\n",
+    "\n",
+    "\n",
+    "To see what the data look like by printing the first 10 twits from the list. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[{'message_body': '$FITB great buy at 26.00...ill wait', 'sentiment': 2, 'timestamp': '2018-07-01T00:00:09Z'}, {'message_body': '@StockTwits $MSFT', 'sentiment': 1, 'timestamp': '2018-07-01T00:00:42Z'}, {'message_body': '#STAAnalystAlert for $TDG : Jefferies Maintains with a rating of Hold setting target price at USD 350.00. Our own verdict is Buy  http://www.stocktargetadvisor.com/toprating', 'sentiment': 2, 'timestamp': '2018-07-01T00:01:24Z'}, {'message_body': '$AMD I heard there’s a guy who knows someone who thinks somebody knows something - on StockTwits.', 'sentiment': 1, 'timestamp': '2018-07-01T00:01:47Z'}, {'message_body': '$AMD reveal yourself!', 'sentiment': 0, 'timestamp': '2018-07-01T00:02:13Z'}, {'message_body': '$AAPL Why the drop? I warren Buffet taking out his position?', 'sentiment': 1, 'timestamp': '2018-07-01T00:03:10Z'}, {'message_body': '$BA bears have 1 reason on 06-29 to pay more attention https://dividendbot.com?s=BA', 'sentiment': -2, 'timestamp': '2018-07-01T00:04:09Z'}, {'message_body': '$BAC ok good we&#39;re not dropping in price over the weekend, lol', 'sentiment': 1, 'timestamp': '2018-07-01T00:04:17Z'}, {'message_body': '$AMAT - Daily Chart, we need to get back to above 50.', 'sentiment': 2, 'timestamp': '2018-07-01T00:08:01Z'}, {'message_body': '$GME 3% drop per week after spike... if no news in 3 months, back to 12s... if BO, then bingo... what is the odds?', 'sentiment': -2, 'timestamp': '2018-07-01T00:09:03Z'}]\n"
+     ]
+    }
+   ],
+   "source": [
+    "with open(os.path.join('..', '..', 'data', 'project_6_stocktwits', 'twits.json'), 'r') as f:\n",
+    "    twits = json.load(f)\n",
+    "\n",
+    "print(twits['data'][:10])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Length of Data\n",
+    "Now let's look at the number of twits in dataset. Print the number of twits below."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "1548010\n"
+     ]
+    }
+   ],
+   "source": [
+    "\"\"\"print out the number of twits\"\"\"\n",
+    "\n",
+    "# TODO Implement \n",
+    "print(len(twits['data']))\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Split Message Body and Sentiment Score"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "messages = [twit['message_body'] for twit in twits['data']]\n",
+    "# Since the sentiment scores are discrete, we'll scale the sentiments to 0 to 4 for use in our network\n",
+    "sentiments = [twit['sentiment'] + 2 for twit in twits['data']]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Preprocessing the Data\n",
+    "With our data in hand we need to preprocess our text. These twits are collected by filtering on ticker symbols where these are denoted with a leader $ symbol in the twit itself. For example,\n",
+    "\n",
+    "`{'message_body': 'RT @google Our annual look at the year in Google blogging (and beyond) http://t.co/sptHOAh8 $GOOG',\n",
+    " 'sentiment': 0}`\n",
+    "\n",
+    "The ticker symbols don't provide information on the sentiment, and they are in every twit, so we should remove them. This twit also has the `@google` username, again not providing sentiment information, so we should also remove it. We also see a URL `http://t.co/sptHOAh8`. Let's remove these too.\n",
+    "\n",
+    "The easiest way to remove specific words or phrases is with regex using the `re` module. You can sub out specific patterns with a space:\n",
+    "\n",
+    "```python\n",
+    "re.sub(pattern, ' ', text)\n",
+    "```\n",
+    "This will substitute a space with anywhere the pattern matches in the text. Later when we tokenize the text, we'll split appropriately on those spaces."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Pre-Processing"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[nltk_data] Downloading package wordnet to /root/nltk_data...\n",
+      "[nltk_data]   Package wordnet is already up-to-date!\n"
+     ]
+    }
+   ],
+   "source": [
+    "nltk.download('wordnet')\n",
+    "\n",
+    "\n",
+    "def preprocess(message):\n",
+    "    \"\"\"\n",
+    "    This function takes a string as input, then performs these operations: \n",
+    "        - lowercase\n",
+    "        - remove URLs\n",
+    "        - remove ticker symbols \n",
+    "        - removes punctuation\n",
+    "        - tokenize by splitting the string on whitespace \n",
+    "        - removes any single character tokens\n",
+    "    \n",
+    "    Parameters\n",
+    "    ----------\n",
+    "        message : The text message to be preprocessed.\n",
+    "        \n",
+    "    Returns\n",
+    "    -------\n",
+    "        tokens: The preprocessed text into tokens.\n",
+    "    \"\"\" \n",
+    "    \n",
+    "    # Lowercase the twit message\n",
+    "    text = message.lower()\n",
+    "    \n",
+    "    # Replace URLs with a space in the message\n",
+    "    text = re.sub(r'https?://[^\\s]+', ' ', text)\n",
+    "    \n",
+    "    # Replace ticker symbols with a space. The ticker symbols are any stock symbol that starts with $.\n",
+    "    text = re.sub(r'\\$[a-zA-Z0-9]*', ' ', text)\n",
+    "    \n",
+    "    # Replace StockTwits usernames with a space. The usernames are any word that starts with @.\n",
+    "    text = re.sub(r'@[a-zA-Z0-9]*', ' ', text)\n",
+    "\n",
+    "    # Replace everything not a letter with a space\n",
+    "    text = re.sub(r'[^a-z]', ' ', text)\n",
+    "\n",
+    "    \n",
+    "    # Tokenize by splitting the string on whitespace into a list of words\n",
+    "    tokens = text.split()\n",
+    "\n",
+    "    # Lemmatize words using the WordNetLemmatizer. You can ignore any word that is not longer than one character.\n",
+    "    wnl = nltk.stem.WordNetLemmatizer()\n",
+    "    tokens = [wnl.lemmatize(w) for w in tokens if len(w)  > 1]\n",
+    "    \n",
+    "    return tokens"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Preprocess All the Twits \n",
+    "Now we can preprocess each of the twits in our dataset. Apply the function `preprocess` to all the twit messages."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# preprocess twit messages\n",
+    "tokenized = [preprocess(message) for message in messages]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "[['great', 'buy', 'at', 'ill', 'wait'],\n",
+       " [],\n",
+       " ['staanalystalert',\n",
+       "  'for',\n",
+       "  'jefferies',\n",
+       "  'maintains',\n",
+       "  'with',\n",
+       "  'rating',\n",
+       "  'of',\n",
+       "  'hold',\n",
+       "  'setting',\n",
+       "  'target',\n",
+       "  'price',\n",
+       "  'at',\n",
+       "  'usd',\n",
+       "  'our',\n",
+       "  'own',\n",
+       "  'verdict',\n",
+       "  'is',\n",
+       "  'buy']]"
+      ]
+     },
+     "execution_count": 7,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# let's look at some tokenized messages\n",
+    "tokenized[:3]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "'@StockTwits $MSFT'"
+      ]
+     },
+     "execution_count": 8,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# let's check why the second tokenized message is empty:\n",
+    "messages[1]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Number of tokens before removing empty ones: 1548010\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(\"Number of tokens before removing empty ones: {}\".format(len(tokenized)))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# we remove empty tokenized messages and align the labels as well\n",
+    "good_tokens = [idx for idx, token in enumerate(tokenized) if len(token) > 0]\n",
+    "tokenized = [tokenized[idx] for idx in good_tokens]\n",
+    "sentiments = [sentiments[idx] for idx in good_tokens]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Number of tokens after removing empty ones: 1499486\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(\"Number of tokens after removing empty ones: {}\".format(len(good_tokens)))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Bag of Words\n",
+    "Now with all of our messages tokenized, we want to create a vocabulary and count up how often each word appears in our entire corpus. Use the [`Counter`](https://docs.python.org/3.1/library/collections.html#collections.Counter) function to count up all the tokens."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from collections import Counter\n",
+    "\n",
+    "\n",
+    "\"\"\"\n",
+    "Create a vocabulary by using Bag of words\n",
+    "\"\"\"\n",
+    "# stack list of lists to obtain one big one \n",
+    "stacked_tokens = [word for twit in tokenized for word in twit]\n",
+    "bow = Counter(stacked_tokens)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Frequency of Words Appearing in Message\n",
+    "With our vocabulary, now we'll remove some of the most common words such as 'the', 'and', 'it', etc. These words don't contribute to identifying sentiment and are really common, resulting in a lot of noise in our input. If we can filter these out, then our network should have an easier time learning.\n",
+    "\n",
+    "We also want to remove really rare words that show up in a only a few twits. Here you'll want to divide the count of each word by the number of messages. Then remove words that only appear in some small fraction of the messages."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "['the', 'to', 'is', 'for', 'on', 'of', 'and', 'in', 'this', 'it', 'at', 'will', 'up', 'are', 'you']\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "6622"
+      ]
+     },
+     "execution_count": 15,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "\"\"\"\n",
+    "Set the following variables:\n",
+    "    freqs\n",
+    "    low_cutoff\n",
+    "    high_cutoff\n",
+    "    K_most_common\n",
+    "\"\"\"\n",
+    "\n",
+    "total_num_words = len(stacked_tokens)\n",
+    "# Dictionart that contains the Frequency of words appearing in messages.\n",
+    "# The key is the token and the value is the frequency of that word in the corpus.\n",
+    "freqs = {key: value/total_num_words for key, value in bow.items()}\n",
+    "\n",
+    "# Float that is the frequency cutoff. Drop words with a frequency that is lower or equal to this number.\n",
+    "low_cutoff = 5e-6\n",
+    "\n",
+    "# Integer that is the cut off for most common words. Drop words that are the `high_cutoff` most common words.\n",
+    "high_cutoff = 15\n",
+    "\n",
+    "# The k most common words in the corpus. Use `high_cutoff` as the k.\n",
+    "K_most_common = [word[0] for word in bow.most_common(high_cutoff)]\n",
+    "\n",
+    "\n",
+    "filtered_words = [word for word in freqs if (freqs[word] > low_cutoff and word not in K_most_common)]\n",
+    "print(K_most_common)\n",
+    "len(filtered_words) "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Updating Vocabulary by Removing Filtered Words\n",
+    "Let's creat three variables that will help with our vocabulary."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from tqdm import tqdm"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100%|██████████| 1499486/1499486 [16:09<00:00, 1546.16it/s]\n"
+     ]
+    }
+   ],
+   "source": [
+    "\"\"\"\n",
+    "Set the following variables:\n",
+    "    vocab\n",
+    "    id2vocab\n",
+    "    filtered\n",
+    "\"\"\"\n",
+    "\n",
+    "\n",
+    "# A dictionary for the `filtered_words`. The key is the word and value is an id that represents the word. \n",
+    "vocab = {word: ii+1 for ii, word in enumerate(filtered_words)}\n",
+    "# Reverse of the `vocab` dictionary. The key is word id and value is the word. \n",
+    "id2vocab = {ii: word for ii, word in enumerate(filtered_words)}\n",
+    "# tokenized with the words not in `filtered_words` removed.\n",
+    "filtered = []\n",
+    "for twit in tqdm(tokenized):\n",
+    "    filtered.append([word for word in twit if word in filtered_words])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Balancing the classes\n",
+    "Let's do a few last pre-processing steps. If we look at how our twits are labeled, we'll find that 50% of them are neutral. This means that our network will be 50% accurate just by guessing 0 every single time. To help our network learn appropriately, we'll want to balance our classes.\n",
+    "That is, make sure each of our different sentiment scores show up roughly as frequently in the data.\n",
+    "\n",
+    "What we can do here is go through each of our examples and randomly drop twits with neutral sentiment. What should be the probability we drop these twits if we want to get around 20% neutral twits starting at 50% neutral? We should also take this opportunity to remove messages with length 0."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "balanced = {'messages': [], 'sentiments':[]}\n",
+    "\n",
+    "n_neutral = sum(1 for each in sentiments if each == 2)\n",
+    "N_examples = len(sentiments)\n",
+    "keep_prob = (N_examples - n_neutral)/4/n_neutral\n",
+    "\n",
+    "for idx, sentiment in enumerate(sentiments):\n",
+    "    message = filtered[idx]\n",
+    "    if len(message) == 0:\n",
+    "        # skip this message because it has length zero\n",
+    "        continue\n",
+    "    elif sentiment != 2 or random.random() < keep_prob:\n",
+    "        balanced['messages'].append(message)\n",
+    "        balanced['sentiments'].append(sentiment) "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "If you did it correctly, you should see the following result "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "0.19904636976243406"
+      ]
+     },
+     "execution_count": 21,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "n_neutral = sum(1 for each in balanced['sentiments'] if each == 2)\n",
+    "N_examples = len(balanced['sentiments'])\n",
+    "n_neutral/N_examples"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Finally let's convert our tokens into integer ids which we can pass to the network."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 22,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "token_ids = [[vocab[word] for word in message] for message in balanced['messages']]\n",
+    "sentiments = balanced['sentiments']"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Neural Network\n",
+    "Now we have our vocabulary which means we can transform our tokens into ids, which are then passed to our network. So, let's define the network now!\n",
+    "\n",
+    "Here is a nice diagram showing the network we'd like to build: \n",
+    "\n",
+    "#### Embed -> RNN -> Dense -> Softmax\n",
+    "### Implement the text classifier\n",
+    "Before we build text classifier, if you remember from the other network that you built in  \"Sentiment Analysis with an RNN\"  exercise  - which there, the network called \" SentimentRNN\", here we named it \"TextClassifer\" - consists of three main parts: 1) init function `__init__` 2) forward pass `forward`  3) hidden state `init_hidden`. \n",
+    "\n",
+    "This network is pretty similar to the network you built expect in the  `forward` pass, we use softmax instead of sigmoid. The reason we are not using sigmoid is that the output of NN is not a binary. In our network, sentiment scores have 5 possible outcomes. We are looking for an outcome with the highest probability thus softmax is a better choice."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 80,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "class TextClassifier(nn.Module):\n",
+    "    def __init__(self, vocab_size, embed_size, lstm_size, output_size, lstm_layers=1, dropout=0.1):\n",
+    "        \"\"\"\n",
+    "        Initialize the model by setting up the layers.\n",
+    "        \n",
+    "        Parameters\n",
+    "        ----------\n",
+    "            vocab_size : The vocabulary size.\n",
+    "            embed_size : The embedding layer size.\n",
+    "            lstm_size : The LSTM layer size.\n",
+    "            output_size : The output size.\n",
+    "            lstm_layers : The number of LSTM layers.\n",
+    "            dropout : The dropout probability.\n",
+    "        \"\"\"\n",
+    "        \n",
+    "        super().__init__()\n",
+    "        self.vocab_size = vocab_size\n",
+    "        self.embed_size = embed_size\n",
+    "        self.lstm_size = lstm_size\n",
+    "        self.output_size = output_size\n",
+    "        self.lstm_layers = lstm_layers\n",
+    "        self.dropout = dropout\n",
+    "        \n",
+    "\n",
+    "        # Setup embedding layer\n",
+    "        self.embedding = nn.Embedding(num_embeddings=self.vocab_size, embedding_dim=self.embed_size)\n",
+    "        \n",
+    "        # Setup additional layers\n",
+    "        self.lstm = nn.LSTM(input_size=self.embed_size, \n",
+    "                            hidden_size=self.lstm_size,\n",
+    "                            num_layers=self.lstm_layers, \n",
+    "                            batch_first=False, \n",
+    "                            dropout=self.dropout)\n",
+    "        self.dropout = nn.Dropout(p=0.3)\n",
+    "        self.fc = nn.Linear(in_features=self.lstm_size, out_features=self.output_size)\n",
+    "        self.log_smax = nn.LogSoftmax(dim=1)\n",
+    "        \n",
+    "\n",
+    "\n",
+    "    def init_hidden(self, batch_size):\n",
+    "        \"\"\" \n",
+    "        Initializes hidden state\n",
+    "        \n",
+    "        Parameters\n",
+    "        ----------\n",
+    "            batch_size : The size of batches.\n",
+    "        \n",
+    "        Returns\n",
+    "        -------\n",
+    "            hidden_state\n",
+    "            \n",
+    "        \"\"\"\n",
+    "        \n",
+    "        \n",
+    "        # Create two new tensors with sizes n_layers x batch_size x hidden_dim,\n",
+    "        # initialized to zero, for hidden state and cell state of LSTM\n",
+    "        weight = next(self.parameters()).data\n",
+    "        \n",
+    "        if False:#torch.cuda.is_available():\n",
+    "            hidden = (weight.new(self.lstm_layers, batch_size, self.lstm_size).zero_().cuda(),\n",
+    "                  weight.new(self.lstm_layers, batch_size, self.lstm_size).zero_().cuda())\n",
+    "        else:\n",
+    "            hidden = (weight.new(self.lstm_layers, batch_size, self.lstm_size).zero_(),\n",
+    "                      weight.new(self.lstm_layers, batch_size, self.lstm_size).zero_())\n",
+    "        \n",
+    "        return hidden\n",
+    "\n",
+    "\n",
+    "    def forward(self, nn_input, hidden_state):\n",
+    "        \"\"\"\n",
+    "        Perform a forward pass of our model on nn_input.\n",
+    "        \n",
+    "        Parameters\n",
+    "        ----------\n",
+    "            nn_input : The batch of input to the NN.\n",
+    "            hidden_state : The LSTM hidden state.\n",
+    "\n",
+    "        Returns\n",
+    "        -------\n",
+    "            logps: log softmax output\n",
+    "            hidden_state: The new hidden state.\n",
+    "\n",
+    "        \"\"\"\n",
+    "        embed = self.embedding(nn_input)\n",
+    "        lstm_out, hidden_state = self.lstm(embed, hidden_state)\n",
+    "        lstm_out = lstm_out[-1]\n",
+    "        #lstm_out = lstm_out.contiguous().view(-1, self.lstm_size)\n",
+    "        logps = self.log_smax(self.dropout(self.fc(lstm_out)))\n",
+    "        #logps = logps[-1]\n",
+    "        \n",
+    "        \n",
+    "        return logps, hidden_state"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### View Model"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 81,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "tensor([[-1.8657, -1.5019, -1.5480, -1.6238, -1.5480],\n",
+      "        [-1.8768, -1.5242, -1.5294, -1.6099, -1.5485],\n",
+      "        [-1.6507, -1.5824, -1.6016, -1.6507, -1.5649],\n",
+      "        [-1.9060, -1.5472, -1.5452, -1.5687, -1.5284]])\n"
+     ]
+    }
+   ],
+   "source": [
+    "model = TextClassifier(len(vocab), 10, 6, 5, dropout=0.1, lstm_layers=2)\n",
+    "model.embedding.weight.data.uniform_(-1, 1)\n",
+    "input = torch.randint(0, 1000, (5, 4), dtype=torch.int64)\n",
+    "hidden = model.init_hidden(4)\n",
+    "\n",
+    "logps, _ = model.forward(input, hidden)\n",
+    "print(logps)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Training\n",
+    "### DataLoaders and Batching\n",
+    "Now we should build a generator that we can use to loop through our data. It'll be more efficient if we can pass our sequences in as batches. Our input tensors should look like `(sequence_length, batch_size)`. So if our sequences are 40 tokens long and we pass in 25 sequences, then we'd have an input size of `(40, 25)`.\n",
+    "\n",
+    "If we set our sequence length to 40, what do we do with messages that are more or less than 40 tokens? For messages with fewer than 40 tokens, we will pad the empty spots with zeros. We should be sure to **left** pad so that the RNN starts from nothing before going through the data. If the message has 20 tokens, then the first 20 spots of our 40 long sequence will be 0. If a message has more than 40 tokens, we'll just keep the first 40 tokens."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 82,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def dataloader(messages, labels, sequence_length=30, batch_size=32, shuffle=False):\n",
+    "    \"\"\" \n",
+    "    Build a dataloader.\n",
+    "    \"\"\"\n",
+    "    if shuffle:\n",
+    "        indices = list(range(len(messages)))\n",
+    "        random.shuffle(indices)\n",
+    "        messages = [messages[idx] for idx in indices]\n",
+    "        labels = [labels[idx] for idx in indices]\n",
+    "\n",
+    "    total_sequences = len(messages)\n",
+    "\n",
+    "    for ii in range(0, total_sequences, batch_size):\n",
+    "        batch_messages = messages[ii: ii+batch_size]\n",
+    "        \n",
+    "        # First initialize a tensor of all zeros\n",
+    "        batch = torch.zeros((sequence_length, len(batch_messages)), dtype=torch.int64)\n",
+    "        for batch_num, tokens in enumerate(batch_messages):\n",
+    "            token_tensor = torch.tensor(tokens)\n",
+    "            # Left pad!\n",
+    "            start_idx = max(sequence_length - len(token_tensor), 0)\n",
+    "            batch[start_idx:, batch_num] = token_tensor[:sequence_length]\n",
+    "        \n",
+    "        label_tensor = torch.tensor(labels[ii: ii+len(batch_messages)])\n",
+    "        \n",
+    "        yield batch, label_tensor"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Training and  Validation\n",
+    "With our data in nice shape, we'll split it into training and validation sets."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 83,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "\"\"\"\n",
+    "Split data into training and validation datasets. Use an appropriate split size.\n",
+    "The features are the `token_ids` and the labels are the `sentiments`.\n",
+    "\"\"\"   \n",
+    "\n",
+    "valid_split = int(0.9*len(token_ids))\n",
+    "\n",
+    "train_features = token_ids[:valid_split]\n",
+    "valid_features = token_ids[valid_split:]\n",
+    "train_labels = sentiments[:valid_split]\n",
+    "valid_labels = sentiments[valid_split:]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 84,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "text_batch, labels = next(iter(dataloader(train_features, train_labels, sequence_length=40, batch_size=512)))\n",
+    "model = TextClassifier(len(vocab)+1, 200, 128, 5, dropout=0.)\n",
+    "hidden = model.init_hidden(512)\n",
+    "logps, hidden = model.forward(text_batch, hidden)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Training\n",
+    "It's time to train the neural network!"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 85,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "TextClassifier(\n",
+       "  (embedding): Embedding(6623, 1024)\n",
+       "  (lstm): LSTM(1024, 512, num_layers=2, dropout=0.2)\n",
+       "  (dropout): Dropout(p=0.3)\n",
+       "  (fc): Linear(in_features=512, out_features=5, bias=True)\n",
+       "  (log_smax): LogSoftmax()\n",
+       ")"
+      ]
+     },
+     "execution_count": 85,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "device = torch.device(\"cuda\" if torch.cuda.is_available() else \"cpu\")\n",
+    "\n",
+    "model = TextClassifier(len(vocab)+1, 1024, 512, 5, lstm_layers=2, dropout=0.2)\n",
+    "model.embedding.weight.data.uniform_(-1, 1)\n",
+    "model.to(device)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 86,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Starting epoch 1\n",
+      "Epoch: 1/2... Step: 100... Loss: 1.200359... Val Loss: 1.069920 Val Accuracy: 0.5640\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 200... Loss: 1.082965... Val Loss: 0.948633 Val Accuracy: 0.6329\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 300... Loss: 1.017363... Val Loss: 0.900841 Val Accuracy: 0.6532\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 400... Loss: 0.951492... Val Loss: 0.875931 Val Accuracy: 0.6661\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 500... Loss: 0.934378... Val Loss: 0.848492 Val Accuracy: 0.6781\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 600... Loss: 0.928758... Val Loss: 0.839419 Val Accuracy: 0.6859\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 700... Loss: 0.923715... Val Loss: 0.827992 Val Accuracy: 0.6862\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 800... Loss: 0.872079... Val Loss: 0.810978 Val Accuracy: 0.6925\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 900... Loss: 0.906159... Val Loss: 0.805392 Val Accuracy: 0.6968\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 1000... Loss: 0.955834... Val Loss: 0.800387 Val Accuracy: 0.6994\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 1100... Loss: 0.874694... Val Loss: 0.785773 Val Accuracy: 0.7019\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 1200... Loss: 0.891450... Val Loss: 0.781646 Val Accuracy: 0.7057\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 1300... Loss: 0.900925... Val Loss: 0.779882 Val Accuracy: 0.7066\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 1400... Loss: 0.882556... Val Loss: 0.779334 Val Accuracy: 0.7081\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 1500... Loss: 0.972012... Val Loss: 0.769205 Val Accuracy: 0.7127\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 1600... Loss: 0.867951... Val Loss: 0.766711 Val Accuracy: 0.7150\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 1/2... Step: 1700... Loss: 0.958725... Val Loss: 0.756919 Val Accuracy: 0.7139\n",
+      "Epoch: 1/2... Step: 1800... Loss: 0.918332... Val Loss: 0.760384 Val Accuracy: 0.7161\n",
+      "New best accuracy - model saved\n",
+      "Starting epoch 2\n",
+      "Epoch: 2/2... Step: 100... Loss: 0.876430... Val Loss: 0.758974 Val Accuracy: 0.7146\n",
+      "Epoch: 2/2... Step: 200... Loss: 0.865997... Val Loss: 0.757515 Val Accuracy: 0.7136\n",
+      "Epoch: 2/2... Step: 300... Loss: 0.843745... Val Loss: 0.756390 Val Accuracy: 0.7153\n",
+      "Epoch: 2/2... Step: 400... Loss: 0.892008... Val Loss: 0.758828 Val Accuracy: 0.7154\n",
+      "Epoch: 2/2... Step: 500... Loss: 0.852997... Val Loss: 0.751616 Val Accuracy: 0.7160\n",
+      "Epoch: 2/2... Step: 600... Loss: 0.885216... Val Loss: 0.749478 Val Accuracy: 0.7161\n",
+      "Epoch: 2/2... Step: 700... Loss: 0.872653... Val Loss: 0.752759 Val Accuracy: 0.7152\n",
+      "Epoch: 2/2... Step: 800... Loss: 0.839194... Val Loss: 0.750899 Val Accuracy: 0.7168\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 2/2... Step: 900... Loss: 0.851361... Val Loss: 0.747214 Val Accuracy: 0.7163\n",
+      "Epoch: 2/2... Step: 1000... Loss: 0.895372... Val Loss: 0.743726 Val Accuracy: 0.7193\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 2/2... Step: 1100... Loss: 0.857576... Val Loss: 0.741319 Val Accuracy: 0.7215\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 2/2... Step: 1200... Loss: 0.818401... Val Loss: 0.743727 Val Accuracy: 0.7192\n",
+      "Epoch: 2/2... Step: 1300... Loss: 0.869333... Val Loss: 0.743082 Val Accuracy: 0.7211\n",
+      "Epoch: 2/2... Step: 1400... Loss: 0.836572... Val Loss: 0.740057 Val Accuracy: 0.7217\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 2/2... Step: 1500... Loss: 0.843704... Val Loss: 0.739328 Val Accuracy: 0.7183\n",
+      "Epoch: 2/2... Step: 1600... Loss: 0.812970... Val Loss: 0.740235 Val Accuracy: 0.7193\n",
+      "Epoch: 2/2... Step: 1700... Loss: 0.910419... Val Loss: 0.736764 Val Accuracy: 0.7221\n",
+      "New best accuracy - model saved\n",
+      "Epoch: 2/2... Step: 1800... Loss: 0.769964... Val Loss: 0.741766 Val Accuracy: 0.7219\n"
+     ]
+    }
+   ],
+   "source": [
+    "\"\"\"\n",
+    "Train your model with dropout. Make sure to clip your gradients.\n",
+    "Print the training loss, validation loss, and validation accuracy for every 100 steps.\n",
+    "\"\"\"\n",
+    "\n",
+    "epochs = 2\n",
+    "batch_size = 512\n",
+    "sequence_length = 40\n",
+    "learning_rate = 1e-3\n",
+    "clip = 5\n",
+    "best_val_acc = 0\n",
+    "\n",
+    "print_every = 100\n",
+    "criterion = nn.NLLLoss()\n",
+    "optimizer = optim.Adam(model.parameters(), lr=learning_rate)\n",
+    "model.train()\n",
+    "\n",
+    "for epoch in range(epochs):\n",
+    "    print('Starting epoch {}'.format(epoch + 1))\n",
+    "    steps = 0        \n",
+    "    hidden = model.init_hidden(batch_size)\n",
+    "    for text_batch, labels in dataloader(\n",
+    "            train_features, train_labels, batch_size=batch_size, sequence_length=sequence_length, shuffle=True):\n",
+    "        if text_batch.size() != torch.Size([sequence_length, batch_size]):\n",
+    "            continue\n",
+    "        steps += 1\n",
+    "        hidden = tuple([each.data for each in hidden])\n",
+    "        \n",
+    "        # Set Device\n",
+    "        text_batch, labels = text_batch.to(device), labels.to(device)\n",
+    "        for each in hidden:\n",
+    "            each.to(device)\n",
+    "        \n",
+    "        model.zero_grad()\n",
+    "        log_ps, hidden = model.forward(text_batch, hidden)\n",
+    "        loss = criterion(log_ps, labels)\n",
+    "        loss.backward()\n",
+    "        nn.utils.clip_grad_norm_(model.parameters(), clip)\n",
+    "        optimizer.step()\n",
+    "        \n",
+    "        if steps % print_every == 0:\n",
+    "            model.eval()\n",
+    "            val_losses = []\n",
+    "            val_accuracy = []\n",
+    "            val_hidden = model.init_hidden(batch_size)\n",
+    "\n",
+    "            for val_text_batch, val_labels in dataloader(\n",
+    "            valid_features, valid_labels, batch_size=batch_size, sequence_length=sequence_length):\n",
+    "                if val_text_batch.size() != torch.Size([sequence_length, batch_size]):\n",
+    "                    continue\n",
+    "                val_text_batch, val_labels = val_text_batch.to(device), val_labels.to(device)\n",
+    "                val_hidden = tuple([each.data for each in val_hidden])\n",
+    "                for each in val_hidden:\n",
+    "                    each.to(device)\n",
+    "                val_log_ps, hidden = model.forward(val_text_batch, val_hidden)\n",
+    "                val_loss = criterion(val_log_ps.squeeze(), val_labels)\n",
+    "                val_losses.append(val_loss.item())\n",
+    "                \n",
+    "                val_ps = torch.exp(val_log_ps)\n",
+    "                top_p, top_class = val_ps.topk(1, dim=1)\n",
+    "                equals = top_class == val_labels.view(*top_class.shape)\n",
+    "                val_accuracy.append(torch.mean(equals.type(torch.FloatTensor)).item())\n",
+    "\n",
+    "            model.train()\n",
+    "            this_val_acc = sum(val_accuracy)/len(val_accuracy)\n",
+    "            \n",
+    "            print(\"Epoch: {}/{}...\".format(epoch+1, epochs),\n",
+    "                  \"Step: {}...\".format(steps),\n",
+    "                  \"Loss: {:.6f}...\".format(loss.item()),\n",
+    "                  \"Val Loss: {:.6f}\".format(sum(val_losses)/len(val_losses)),\n",
+    "                 \"Val Accuracy: {:.4f}\".format(this_val_acc))\n",
+    "            if this_val_acc > best_val_acc:\n",
+    "                torch.save({\n",
+    "            'epoch': epoch,\n",
+    "            'step': steps,\n",
+    "            'model_state_dict': model.state_dict(),\n",
+    "            'optimizer_state_dict': optimizer.state_dict(),\n",
+    "            'loss': loss,\n",
+    "            }, 'best_model')\n",
+    "                best_val_acc = this_val_acc\n",
+    "                print(\"New best accuracy - model saved\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Making Predictions\n",
+    "### Prediction \n",
+    "Okay, now that you have a trained model, try it on some new twits and see if it works appropriately. Remember that for any new text, you'll need to preprocess it first before passing it to the network. Implement the `predict` function to generate the prediction vector from a message."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 102,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def predict(text, model, vocab):\n",
+    "    \"\"\" \n",
+    "    Make a prediction on a single sentence.\n",
+    "\n",
+    "    Parameters\n",
+    "    ----------\n",
+    "        text : The string to make a prediction on.\n",
+    "        model : The model to use for making the prediction.\n",
+    "        vocab : Dictionary for word to word ids. The key is the word and the value is the word id.\n",
+    "\n",
+    "    Returns\n",
+    "    -------\n",
+    "        pred : Prediction vector\n",
+    "    \"\"\"    \n",
+    "        \n",
+    "    tokens = preprocess(text)\n",
+    "    \n",
+    "    # Filter non-vocab words\n",
+    "    tokens = [word for word in tokens if word in filtered_words]\n",
+    "    # Convert words to ids\n",
+    "    tokens = [vocab[word] for word in tokens] \n",
+    "        \n",
+    "    # Adding a batch dimension\n",
+    "    text_input = torch.tensor(tokens).unsqueeze(1)\n",
+    "    # Get the NN output\n",
+    "    #print(text_input.size())\n",
+    "    hidden  = model.init_hidden(text_input.size(1))\n",
+    "    logps, _ = model.forward(text_input, hidden)\n",
+    "    # Take the exponent of the NN output to get a range of 0 to 1 for each label.\n",
+    "    pred = torch.exp(logps)\n",
+    "    \n",
+    "    return pred.detach().numpy()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 103,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "text = \"Google is working on self driving cars, I'm bullish on $goog\"\n",
+    "model.eval()\n",
+    "model.to(\"cpu\")\n",
+    "pred = predict(text, model, vocab)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 108,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([[ 0.00146974,  0.04122891,  0.01940407,  0.70330679,  0.23459047]], dtype=float32)"
+      ]
+     },
+     "execution_count": 108,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "pred"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Questions: What is the prediction of the model? What is the uncertainty of the prediction?\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 93,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import numpy as np"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 107,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Class 1 is the most probable class with a likelihood of 70.33%\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(\"Class {} is the most probable class with a likelihood of {:.2f}%\".format(np.argmax(pred)-2, np.max(pred)*100))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now we have a trained model and we can make predictions. We can use this model to track the sentiments of various stocks by predicting the sentiments of twits as they are coming in. Now we have a stream of twits. For each of those twits, pull out the stocks mentioned in them and keep track of the sentiments. Remember that in the twits, ticker symbols are encoded with a dollar sign as the first character, all caps, and 2-4 letters, like $AAPL. Ideally, you'd want to track the sentiments of the stocks in your universe and use this as a signal in your larger model(s).\n",
+    "\n",
+    "## Testing\n",
+    "### Load the Data "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 109,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "with open(os.path.join('..', '..', 'data', 'project_6_stocktwits', 'test_twits.json'), 'r') as f:\n",
+    "    test_data = json.load(f)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Twit Stream"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 110,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "{'message_body': '$JWN has moved -1.69% on 10-31. Check out the movement and peers at  https://dividendbot.com?s=JWN',\n",
+       " 'timestamp': '2018-11-01T00:00:05Z'}"
+      ]
+     },
+     "execution_count": 110,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def twit_stream():\n",
+    "    for twit in test_data['data']:\n",
+    "        yield twit\n",
+    "\n",
+    "next(twit_stream())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Using the `prediction` function, let's apply it to a stream of twits."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 111,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def score_twits(stream, model, vocab, universe):\n",
+    "    \"\"\" \n",
+    "    Given a stream of twits and a universe of tickers, return sentiment scores for tickers in the universe.\n",
+    "    \"\"\"\n",
+    "    for twit in stream:\n",
+    "\n",
+    "        # Get the message text\n",
+    "        text = twit['message_body']\n",
+    "        symbols = re.findall('\\$[A-Z]{2,4}', text)\n",
+    "        score = predict(text, model, vocab)\n",
+    "\n",
+    "        for symbol in symbols:\n",
+    "            if symbol in universe:\n",
+    "                yield {'symbol': symbol, 'score': score, 'timestamp': twit['timestamp']}"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 112,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "{'symbol': '$AAPL',\n",
+       " 'score': array([[ 0.19621241,  0.12706107,  0.15946996,  0.18527909,  0.33197746]], dtype=float32),\n",
+       " 'timestamp': '2018-11-01T00:00:18Z'}"
+      ]
+     },
+     "execution_count": 112,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "universe = {'$BBRY', '$AAPL', '$AMZN', '$BABA', '$YHOO', '$LQMT', '$FB', '$GOOG', '$BBBY', '$JNUG', '$SBUX', '$MU'}\n",
+    "score_stream = score_twits(twit_stream(), model, vocab, universe)\n",
+    "\n",
+    "next(score_stream)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "That's it. You have successfully built a model for sentiment analysis! "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Submission\n",
+    "Now that you're done with the project, it's time to submit it. Click the submit button in the bottom right. One of our reviewers will give you feedback on your project with a pass or not passed grade. You can continue to the next section while you wait for feedback."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.6.3"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
